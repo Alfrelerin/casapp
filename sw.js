@@ -1,6 +1,6 @@
 // Service worker: permite instalar la app y abrirla sin conexión.
 // Si cambias archivos y no ves los cambios, sube el número de versión.
-const CACHE = 'reparto-v1';
+const CACHE = 'reparto-v3';
 const SHELL = [
   './', './index.html', './css/styles.css', './js/app.js', './js/logic.js', './js/store.js',
   './js/firebase-config.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png',
@@ -23,8 +23,11 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // Librerías de Firebase (versionadas): primero caché.
-  if (url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/')) {
+  // Librerías de Firebase (versionadas) y tipografía: primero caché.
+  const cacheFirst =
+    (url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/')) ||
+    url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
+  if (cacheFirst) {
     e.respondWith(
       caches.match(req).then((hit) => hit || fetch(req).then((res) => {
         const copy = res.clone();

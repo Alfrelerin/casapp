@@ -1,7 +1,7 @@
 import {
   PEOPLE, BOTH, other, personName, mondayOf, toISO, fromISO, addDays, weekLabel, shortDate,
   weekLetter, assigneeFor, scoreOfWeek, plannedOfWeek, allCompletions, addCompletion, emptyScore,
-  balanceMessage, DEFAULT_TASKS, DEFAULT_FINDE, TIPS, BATCH_TIPS, newHouseholdCode,
+  balanceMessage, DEFAULT_TASKS, DEFAULT_FINDE, TIPS, BATCH_TIPS, newHouseholdCode, PERSON_EMOJI, SKIP_REASONS,
 } from './logic.js';
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,7 @@ const S = {
   tasks: [],
   week: null,
   recentWeeks: [],
+  profiles: {},
   unsubs: [],
   weekUnsub: null,
   pendingRender: false,
@@ -59,10 +60,16 @@ function run(p, okMsg) {
 }
 const buzz = () => { try { navigator.vibrate?.(12); } catch {} };
 
-const avatar = (p, size = '') =>
-  p === BOTH
-    ? `<span class="av av-both ${size}" title="Los dos"><i>A</i><i>L</i></span>`
-    : `<span class="av av-${p} ${size}" title="${esc(personName(p))}">${esc(personName(p)[0])}</span>`;
+function avatar(p, size = '') {
+  if (p === BOTH) return `<span class="av-pair ${size}" title="Los dos">${avatar('alfre', size)}${avatar('laura', size)}</span>`;
+  const photo = S.profiles?.[p]?.photo;
+  const inner = photo ? `<img src="${esc(photo)}" alt="" />` : esc(personName(p)[0] || '?');
+  return `<span class="av av-${p} ${size} ${photo ? 'has-photo' : ''}" title="${esc(personName(p))}">${inner}</span>`;
+}
+const setMeClass = () => {
+  document.body.classList.remove('me-alfre', 'me-laura');
+  if (S.me) document.body.classList.add(`me-${S.me}`);
+};
 
 const ICON = {
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -139,6 +146,8 @@ function startApp() {
   const onErr = (e) => { console.error(e); toast('Error de conexión: ' + (e.code || e.message)); };
   S.unsubs.push(store.watchHousehold(S.hid, (h) => { S.household = h; render(); }, onErr));
   S.unsubs.push(store.watchTasks(S.hid, (t) => { S.tasks = t; render(); }, onErr));
+  S.unsubs.push(store.watchProfiles(S.hid, (p) => { S.profiles = p; render(); }, onErr));
+  setMeClass();
   const since = toISO(addDays(mondayOf(), -7 * 9));
   S.unsubs.push(store.watchWeeksSince(S.hid, since, (w) => { S.recentWeeks = w; render(); }, onErr));
   watchViewedWeek();
@@ -172,6 +181,18 @@ function render() {
   const views = { semana: viewSemana, balance: viewBalance, cocina: viewCocina, ajustes: viewAjustes };
   $app.innerHTML = (views[S.tab] || viewSemana)();
   $tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === S.tab));
+  const n = notices().length;
+  const semTab = $tabs.querySelector('[data-tab="semana"]');
+  if (semTab) semTab.dataset.badge = n ? String(n) : '';
+}
+
+// Avisos para mí en la semana que estoy viendo: peticiones de cambio y tareas que "no hace falta hacer".
+function notices() {
+  const me = S.me, w = S.week || {};
+  const out = [];
+  Object.entries(w.swaps || {}).forEach(([id, s]) => { if (s.status === 'pending' && s.to === me) out.push({ kind: 'swap', id, s }); });
+  Object.entries(w.skips || {}).forEach(([id, s]) => { if (s.by !== me && !s.seen?.[me]) out.push({ kind: 'skip', id, s }); });
+  return out;
 }
 $app.addEventListener('focusout', () => setTimeout(() => S.pendingRender && render(), 50));
 
@@ -221,13 +242,19 @@ function taskState(t) {
   const who = assigneeFor(t, L, w);
   const done = w.completions?.[t.id] || null;
   const swap = w.swaps?.[t.id] || null;
-  return { t, base, who, done, swap };
+  const skip = w.skips?.[t.id] || null;
+  return { t, base, who, done, swap, skip };
 }
 
 function badges(st) {
-  const { t, base, who, done, swap } = st;
+  const { t, base, who, done, swap, skip } = st;
   const me = S.me, them = other(S.me);
   const out = [];
+  if (skip) {
+    out.push(`<span class="tag tag-skip">🙅 no hace falta${skip.by !== me ? ` · lo dice ${esc(personName(skip.by))}` : ''}</span>`);
+    if (skip.reason && skip.reason !== 'Otro motivo') out.push(`<span>${esc(skip.reason)}</span>`);
+    return out.join('<i class="dot">·</i>');
+  }
   if (t.day) out.push(`<span>${esc(t.day)}</span>`);
   out.push(`<b>${pts(t.points)}</b>`);
   if (swap?.status === 'accepted' && base !== BOTH) {
@@ -246,10 +273,10 @@ function badges(st) {
 }
 
 function taskCard(st) {
-  const { t, done } = st;
+  const { t, done, skip, who } = st;
   return `
-  <div class="task ${done ? 'done' : ''}" data-id="${esc(t.id)}">
-    <button class="check" data-act="check" data-id="${esc(t.id)}" aria-label="${done ? 'Desmarcar' : 'Marcar como hecha'}">${ICON.check}</button>
+  <div class="task own-${who} ${done ? 'done' : ''} ${skip ? 'skipped' : ''}" data-id="${esc(t.id)}">
+    <button class="check" data-act="check" data-id="${esc(t.id)}" aria-label="${done ? 'Desmarcar' : skip ? 'No hace falta' : 'Marcar como hecha'}">${skip ? '<span class="skip-ico">–</span>' : ICON.check}</button>
     <button class="task-body" data-act="task-menu" data-id="${esc(t.id)}">
       <span class="task-title"><span class="emoji">${esc(t.icon || '•')}</span>${esc(t.name)}</span>
       <span class="task-meta">${badges(st)}</span>
@@ -260,11 +287,13 @@ function taskCard(st) {
 
 function section(title, list, extraCls = '') {
   if (!list.length) return '';
-  const sorted = [...list].sort((a, b) => (!!a.done - !!b.done) || ((a.t.order ?? 0) - (b.t.order ?? 0)));
+  const rank = (s) => (s.skip ? 2 : s.done ? 1 : 0);
+  const sorted = [...list].sort((a, b) => (rank(a) - rank(b)) || ((a.t.order ?? 0) - (b.t.order ?? 0)));
   const doneN = list.filter((s) => s.done).length;
+  const totalN = list.filter((s) => !s.skip).length;
   return `
   <section class="group ${extraCls}">
-    <h2>${title}<span class="count">${doneN}/${list.length}</span></h2>
+    <h2>${title}<span class="count">${doneN}/${totalN}</span></h2>
     <div class="cards">${sorted.map(taskCard).join('')}</div>
   </section>`;
 }
@@ -288,10 +317,17 @@ function viewSemana() {
   const doneScore = scoreOfWeek(S.week);
   const planned = plannedOfWeek(activeTasks(), L, S.week);
 
-  const incoming = Object.entries(S.week?.swaps || {}).filter(([, s]) => s.status === 'pending' && s.to === me);
-  const requests = incoming.map(([id, s]) => {
+  const requests = notices().map(({ kind, id, s }) => {
     const t = taskById(id), off = s.offer && taskById(s.offer);
     if (!t) return '';
+    if (kind === 'skip') return `
+    <div class="card notice notice-${esc(s.by)}">
+      <div class="req-text">${avatar(s.by, 'sm')}<p><b>${esc(personName(s.by))}</b> dice que <b>${esc(t.name)}</b> no hace falta esta semana${s.reason && s.reason !== 'Otro motivo' ? ` · <span class="muted">${esc(s.reason)}</span>` : ''}.</p></div>
+      <div class="req-actions">
+        <button class="btn ghost" data-act="skip-undo" data-id="${esc(id)}">Sí hace falta</button>
+        <button class="btn primary" data-act="skip-ack" data-id="${esc(id)}">Vale 👍</button>
+      </div>
+    </div>`;
     return `
     <div class="card request">
       <div class="req-text">${avatar(s.from, 'sm')}<p><b>${esc(personName(s.from))}</b> te pide que hagas <b>${esc(t.name)}</b> (${pts(t.points)})${off ? ` y a cambio hace <b>${esc(off.name)}</b> (${pts(off.points)})` : ''}.</p></div>
@@ -311,18 +347,20 @@ function viewSemana() {
       </div>
     </div>`;
 
+  const hello = isCurrentWeek() ? `<p class="hello">¡Hola, ${esc(personName(me))}! ${PERSON_EMOJI[me]}</p>` : '';
   return `
   ${weekHeader()}
   <main class="view">
+    ${hello}
     ${invite}
     ${requests}
     <div class="card summary">
       ${progressRow(me, doneScore[me], planned[me])}
       ${progressRow(them, doneScore[them], planned[them])}
     </div>
-    ${section('Tus tareas', sts.filter((s) => s.who === me))}
-    ${section('Los dos', sts.filter((s) => s.who === BOTH))}
-    ${section(`Tareas de ${esc(personName(them))}`, sts.filter((s) => s.who === them), 'theirs')}
+    ${section(`${PERSON_EMOJI[me]} Tus tareas`, sts.filter((s) => s.who === me))}
+    ${section(`${PERSON_EMOJI.both} Los dos`, sts.filter((s) => s.who === BOTH))}
+    ${section(`${PERSON_EMOJI[them]} Tareas de ${esc(personName(them))}`, sts.filter((s) => s.who === them), 'theirs')}
     ${!sts.length ? '<p class="empty">No hay tareas. Añádelas en Ajustes.</p>' : ''}
     <details class="card tips">
       <summary>Cómo funciona</summary>
@@ -411,12 +449,12 @@ function viewCocina() {
   const cell = (k) => `<button class="finde-cell" data-act="finde" data-k="${k}">${avatar(f[k])}<span>${esc(personName(f[k]))}</span></button>`;
 
   const batchCards = batch.map((st) => {
-    const { t, who, done } = st;
+    const { t, who, done, skip } = st;
     const note = S.week?.notes?.[t.id] ?? '';
     return `
-    <div class="card batch ${done ? 'done' : ''}">
+    <div class="card batch own-${who} ${done ? 'done' : ''} ${skip ? 'skipped' : ''}">
       <div class="batch-head">
-        <button class="check" data-act="check" data-id="${esc(t.id)}" aria-label="Hecho">${ICON.check}</button>
+        <button class="check" data-act="check" data-id="${esc(t.id)}" aria-label="Hecho">${skip ? '<span class="skip-ico">–</span>' : ICON.check}</button>
         <button class="task-body" data-act="task-menu" data-id="${esc(t.id)}">
           <span class="task-title"><span class="emoji">${esc(t.icon || '•')}</span>${esc(t.name)}</span>
           <span class="task-meta">${badges(st)}</span>
@@ -463,6 +501,43 @@ $app.addEventListener('input', (e) => {
   noteTimers[id] = setTimeout(() => run(store.setNote(S.hid, week, id, ta.value.trim())), 700);
 });
 
+// Foto de perfil: se recorta cuadrada, se reduce a 320 px y se guarda como JPEG ligero (≈20–40 KB).
+$app.addEventListener('change', async (e) => {
+  const input = e.target.closest('input[data-photo]');
+  if (!input || !input.files?.[0]) return;
+  try {
+    toast('Preparando foto…');
+    const dataUrl = await squarePhoto(input.files[0], 320);
+    run(store.setPhoto(S.hid, S.me, dataUrl), '¡Foto guardada! 📸');
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo leer la foto');
+  }
+  input.value = '';
+});
+
+async function squarePhoto(file, size) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = url;
+    });
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const sx = (img.naturalWidth - side) / 2, sy = (img.naturalHeight - side) / 2;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+    return c.toDataURL('image/jpeg', 0.82);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Vista: Ajustes
 // ---------------------------------------------------------------------------
@@ -488,10 +563,25 @@ function viewAjustes() {
   ${simpleHeader('Ajustes')}
   <main class="view">
     <section class="group">
+      <h2>Perfil</h2>
+      <div class="profiles">
+        ${['alfre', 'laura'].map((p) => `
+        <div class="profile own-${p} ${p === S.me ? 'is-me' : ''}">
+          ${avatar(p, 'xl')}
+          <b>${esc(personName(p))} ${PERSON_EMOJI[p]}</b>
+          ${p === S.me ? `
+            <label class="btn small primary">📷 ${S.profiles?.[p]?.photo ? 'Cambiar foto' : 'Poner foto'}<input type="file" accept="image/*" data-photo hidden /></label>
+            ${S.profiles?.[p]?.photo ? '<button class="link" data-act="photo-remove">Quitar foto</button>' : ''}`
+          : `<span class="muted small">${S.profiles?.[p]?.photo ? '' : 'Aún sin foto'}</span>`}
+        </div>`).join('')}
+      </div>
+    </section>
+
+    <section class="group">
       <h2>¿Quién usa este móvil?</h2>
       <div class="seg">
-        <button class="${S.me === 'alfre' ? 'on' : ''}" data-act="set-me" data-p="alfre">Alfre</button>
-        <button class="${S.me === 'laura' ? 'on' : ''}" data-act="set-me" data-p="laura">Laura</button>
+        <button class="${S.me === 'alfre' ? 'on' : ''}" data-act="set-me" data-p="alfre">☀️ Alfre</button>
+        <button class="${S.me === 'laura' ? 'on' : ''}" data-act="set-me" data-p="laura">🌸 Laura</button>
       </div>
     </section>
 
@@ -590,6 +680,16 @@ function taskMenu(t) {
   const st = taskState(t);
   const me = S.me, them = other(me);
   const acts = [];
+  if (st.skip) {
+    acts.push({ label: 'Sí hay que hacerla', cls: 'primary', run: () => run(store.unskipTask(S.hid, ws(), t.id), 'Vuelve a la lista') });
+    acts.push({ label: 'Editar tarea', cls: 'plain', run: () => setTimeout(() => editTask(t), 240) });
+    const who = st.skip.by === me ? 'Tú' : personName(st.skip.by);
+    return actionSheet({
+      title: `${esc(t.icon || '')} ${esc(t.name)}`,
+      text: `${esc(who)} ${st.skip.by === me ? 'has' : 'ha'} marcado que no hace falta esta semana${st.skip.reason && st.skip.reason !== 'Otro motivo' ? ` · ${esc(st.skip.reason)}` : ''}.`,
+      actions: acts,
+    });
+  }
   if (st.done) {
     acts.push({ label: 'Desmarcar', run: () => run(store.unmarkDone(S.hid, ws(), t.id), 'Desmarcada') });
   } else {
@@ -608,16 +708,30 @@ function taskMenu(t) {
       acts.push({ label: 'Deshacer intercambio', run: () => run(store.cancelSwap(S.hid, ws(), t.id, st.swap), 'Intercambio deshecho') });
     }
   }
+  if (!st.done) acts.push({ label: '🙅 No hace falta esta semana', cls: 'soft', run: () => setTimeout(() => skipSheet(t), 240) });
   acts.push({ label: 'Editar tarea', cls: 'plain', run: () => setTimeout(() => editTask(t), 240) });
   const info = [t.day, `${pts(t.points)}`, `Esta semana: ${personName(st.who)}`].filter(Boolean).join(' · ');
   actionSheet({ title: `${esc(t.icon || '')} ${esc(t.name)}`, text: esc(info) + (t.note ? `<br><em>${esc(t.note)}</em>` : ''), actions: acts });
+}
+
+function skipSheet(t) {
+  const them = personName(other(S.me));
+  actionSheet({
+    title: `¿Por qué no hace falta «${esc(t.name)}»?`,
+    text: `Le avisaremos a ${esc(them)}. No suma puntos a nadie y se puede deshacer.`,
+    actions: SKIP_REASONS.map((r, i) => ({
+      label: esc(r),
+      cls: i === 0 ? 'primary' : 'ghost',
+      run: () => { buzz(); run(store.skipTask(S.hid, ws(), t.id, S.me, r), `Avisamos a ${them}`); },
+    })),
+  });
 }
 
 function swapSheet(t) {
   const me = S.me, them = other(me);
   const offers = activeTasks()
     .map(taskState)
-    .filter((s) => s.who === them && !s.done && !s.swap && s.base !== BOTH);
+    .filter((s) => s.who === them && !s.done && !s.skip && !s.swap && s.base !== BOTH);
   actionSheet({
     title: `Pedir a ${esc(personName(them))} que haga «${esc(t.name)}»`,
     text: `¿Le ofreces algo a cambio? (${pts(t.points)})`,
@@ -736,6 +850,7 @@ $app.addEventListener('click', async (e) => {
     case 'check': {
       if (!t) break;
       const st = taskState(t);
+      if (st.skip) { taskMenu(t); break; }
       if (st.done) { run(store.unmarkDone(S.hid, ws(), t.id)); toast('Desmarcada'); break; }
       if (st.who === S.me) done(t, S.me);
       else if (st.who === BOTH) done(t, BOTH);
@@ -757,6 +872,16 @@ $app.addEventListener('click', async (e) => {
       break;
     }
 
+    case 'skip-ack':
+      run(store.ackSkip(S.hid, ws(), el.dataset.id, S.me));
+      break;
+    case 'skip-undo':
+      run(store.unskipTask(S.hid, ws(), el.dataset.id), 'Vuelve a la lista');
+      break;
+    case 'photo-remove':
+      run(store.setPhoto(S.hid, S.me, null), 'Foto quitada');
+      break;
+
     case 'period':
       S.period = el.dataset.p;
       render();
@@ -774,6 +899,7 @@ $app.addEventListener('click', async (e) => {
     case 'set-me':
       S.me = el.dataset.p;
       ls.set('me', S.me);
+      setMeClass();
       render();
       toast(`Hola, ${personName(S.me)}`);
       break;
@@ -850,7 +976,7 @@ function renderWelcome() {
   $app.innerHTML = `
   <main class="onb">
     ${LOGO}
-    <h1>Reparto de tareas</h1>
+    <h1>Casapp</h1>
     <p class="muted">Rotación A/B, puntos por esfuerzo y batch cooking, sincronizado entre los dos móviles.</p>
     <button class="btn primary block" id="create">Crear nuestro hogar</button>
     <div class="or"><span>o únete con el código</span></div>
@@ -872,7 +998,7 @@ function renderWelcome() {
       renderWho();
     } catch (err) {
       console.error(err);
-      toast('No se pudo crear: ' + (err.code || err.message));
+      toast(`No se pudo crear: ${err.code || err.message} (${store.sessionInfo()})`);
       e.target.disabled = false;
       e.target.textContent = 'Crear nuestro hogar';
     }
@@ -895,13 +1021,14 @@ function renderWho() {
     <h1>¿Quién eres?</h1>
     <p class="muted">Se recordará en este móvil. Puedes cambiarlo en Ajustes.</p>
     <div class="who">
-      <button class="who-btn who-alfre" data-p="alfre">${avatar('alfre', 'lg')}<span>Soy Alfre</span></button>
-      <button class="who-btn who-laura" data-p="laura">${avatar('laura', 'lg')}<span>Soy Laura</span></button>
+      <button class="who-btn who-alfre" data-p="alfre">${avatar('alfre', 'lg')}<span>Soy Alfre ☀️</span></button>
+      <button class="who-btn who-laura" data-p="laura">${avatar('laura', 'lg')}<span>Soy Laura 🌸</span></button>
     </div>
   </main>`;
   $app.querySelectorAll('.who-btn').forEach((b) => (b.onclick = () => {
     S.me = b.dataset.p;
     ls.set('me', S.me);
+    setMeClass();
     startApp();
   }));
 }

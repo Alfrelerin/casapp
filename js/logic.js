@@ -6,6 +6,8 @@ export const PEOPLE = {
 };
 export const BOTH = 'both';
 export const other = (p) => (p === 'alfre' ? 'laura' : 'alfre');
+export const PERSON_EMOJI = { alfre: '☀️', laura: '🌸', both: '💜' };
+export const SKIP_REASONS = ['Ya está limpio ✨', 'No estamos en casa 🧳', 'La dejamos para la próxima ⏭️', 'Otro motivo'];
 export const personName = (p) => (p === BOTH ? 'Los dos' : PEOPLE[p]?.name ?? '—');
 
 const DAY = 864e5;
@@ -83,7 +85,7 @@ export function scoreOfWeek(week) {
 export function plannedOfWeek(tasks, letter, week) {
   const s = emptyScore();
   tasks.forEach((t) => {
-    if (t.active === false) return;
+    if (t.active === false || week?.skips?.[t.id]) return;
     addCompletion(s, { by: assigneeFor(t, letter, week), pts: t.points });
   });
   return s;
