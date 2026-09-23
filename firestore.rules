@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Reglas de seguridad de Firestore para "Reparto de tareas".
+// Cópialas en: Consola de Firebase → Firestore Database → Reglas → Publicar.
+//
+// - Solo usuarios con sesión (anónima) pueden leer/escribir.
+// - El código del hogar es largo y aleatorio y hace de "llave": nadie puede
+//   listar los hogares, así que sin el código no se puede llegar a vuestros datos.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /households/{hid} {
+      allow get, create, update: if request.auth != null && hid.size() >= 16;
+      allow list, delete: if false;
+
+      match /{sub=**} {
+        allow read, write: if request.auth != null && hid.size() >= 16;
+      }
+    }
+  }
+}
