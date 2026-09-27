@@ -2,6 +2,7 @@ import {
   PEOPLE, BOTH, other, personName, mondayOf, toISO, fromISO, addDays, weekLabel, shortDate,
   weekLetter, assigneeFor, scoreOfWeek, plannedOfWeek, allCompletions, addCompletion, emptyScore,
   balanceMessage, DEFAULT_TASKS, DEFAULT_FINDE, TIPS, BATCH_TIPS, newHouseholdCode, PERSON_EMOJI, SKIP_REASONS,
+  niceDate, todayISO, MEAL_DAYS, MEAL_TIPS, mealState,
 } from './logic.js';
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,7 @@ const S = {
   week: null,
   recentWeeks: [],
   profiles: {},
+  meals: [],
   unsubs: [],
   weekUnsub: null,
   pendingRender: false,
@@ -79,6 +81,7 @@ const ICON = {
   tabSemana: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 3v4M16 3v4M8.5 13l2.3 2.3L15.5 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   tabBalance: '<svg viewBox="0 0 24 24"><path d="M12 4v16M5 20h14M6 8h12M6 8l-3 6a3 3 0 0 0 6 0zM18 8l-3 6a3 3 0 0 0 6 0z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
   tabCocina: '<svg viewBox="0 0 24 24"><path d="M4 11h16v2a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6zM2 11h20M9 4c0 2 2 2 2 4M13 4c0 2 2 2 2 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  tabTapers: '<svg viewBox="0 0 24 24"><rect x="3.5" y="9" width="17" height="10.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 9h19M7 6.5h10a1.5 1.5 0 0 1 1.5 1.5v1h-13V8A1.5 1.5 0 0 1 7 6.5zM9 13.5h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   tabAjustes: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2L5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
 };
 
@@ -147,6 +150,7 @@ function startApp() {
   S.unsubs.push(store.watchHousehold(S.hid, (h) => { S.household = h; render(); }, onErr));
   S.unsubs.push(store.watchTasks(S.hid, (t) => { S.tasks = t; render(); }, onErr));
   S.unsubs.push(store.watchProfiles(S.hid, (p) => { S.profiles = p; render(); }, onErr));
+  S.unsubs.push(store.watchMeals(S.hid, (m) => { S.meals = m; render(); }, onErr));
   setMeClass();
   const since = toISO(addDays(mondayOf(), -7 * 9));
   S.unsubs.push(store.watchWeeksSince(S.hid, since, (w) => { S.recentWeeks = w; render(); }, onErr));
@@ -178,12 +182,15 @@ function render() {
     return;
   }
   S.pendingRender = false;
-  const views = { semana: viewSemana, balance: viewBalance, cocina: viewCocina, ajustes: viewAjustes };
+  const views = { semana: viewSemana, balance: viewBalance, cocina: viewCocina, tapers: viewTapers, ajustes: viewAjustes };
   $app.innerHTML = (views[S.tab] || viewSemana)();
   $tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === S.tab));
   const n = notices().length;
   const semTab = $tabs.querySelector('[data-tab="semana"]');
   if (semTab) semTab.dataset.badge = n ? String(n) : '';
+  const urgent = activeMeals().filter((m) => mealState(m).status !== 'ok').length;
+  const tapTab = $tabs.querySelector('[data-tab="tapers"]');
+  if (tapTab) tapTab.dataset.badge = urgent ? String(urgent) : '';
 }
 
 // Avisos para mí en la semana que estoy viendo: peticiones de cambio y tareas que "no hace falta hacer".
@@ -199,8 +206,9 @@ $app.addEventListener('focusout', () => setTimeout(() => S.pendingRender && rend
 function renderTabs() {
   const items = [
     ['semana', 'Semana', ICON.tabSemana],
-    ['balance', 'Balance', ICON.tabBalance],
     ['cocina', 'Cocina', ICON.tabCocina],
+    ['tapers', 'Tápers', ICON.tabTapers],
+    ['balance', 'Balance', ICON.tabBalance],
     ['ajustes', 'Ajustes', ICON.tabAjustes],
   ];
   $tabs.innerHTML = items
@@ -466,6 +474,7 @@ function viewCocina() {
         <span>Base a cocinar</span>
         <textarea rows="2" data-note="${esc(t.id)}" placeholder="p. ej. Garbanzos + verdura asada">${esc(note)}</textarea>
       </label>
+      <button class="btn small ghost to-taper" data-act="batch-to-taper" data-id="${esc(t.id)}">🍱 Apuntar en tápers</button>
     </div>`;
   }).join('');
 
@@ -489,6 +498,168 @@ function viewCocina() {
       <ul>${BATCH_TIPS.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
     </details>
   </main>`;
+}
+
+// ---------------------------------------------------------------------------
+// Vista: Tápers (comidas hechas y hasta cuándo aguantan)
+// ---------------------------------------------------------------------------
+const activeMeals = () => S.meals.filter((m) => m.status !== 'done');
+const PLACE = { nevera: { icon: '🧊', name: 'Nevera' }, congelador: { icon: '❄️', name: 'Congelador' } };
+
+function mealCard(m) {
+  const st = mealState(m);
+  const left = Number(m.left ?? m.portions ?? 0);
+  return `
+  <div class="meal meal-${st.status}" data-id="${esc(m.id)}">
+    <button class="meal-main" data-act="meal-menu" data-id="${esc(m.id)}">
+      <span class="meal-top"><b class="meal-name">${esc(m.name)}</b><span class="meal-pill">${esc(st.label)}</span></span>
+      <span class="meal-meta">${avatar(m.by || BOTH, 'sm')}<span>Hecho el ${esc(niceDate(m.madeOn))}${m.note ? ` · ${esc(m.note)}` : ''}</span></span>
+    </button>
+    <div class="meal-foot">
+      <span class="portions">${'<i></i>'.repeat(Math.min(left, 12))}<em>${left} ${left === 1 ? 'ración' : 'raciones'}</em></span>
+      <button class="btn small primary" data-act="meal-eat" data-id="${esc(m.id)}">🍽 Comer 1</button>
+    </div>
+  </div>`;
+}
+
+function viewTapers() {
+  const act = activeMeals().sort((a, b) => (a.useBy || '').localeCompare(b.useBy || ''));
+  const group = (place) => {
+    const list = act.filter((m) => (m.place || 'nevera') === place);
+    return `
+    <section class="group">
+      <h2>${PLACE[place].icon} ${PLACE[place].name}<span class="count">${list.length}</span></h2>
+      ${list.length ? `<div class="cards">${list.map(mealCard).join('')}</div>` : `<p class="empty small">Nada en ${place === 'nevera' ? 'la nevera' : 'el congelador'}.</p>`}
+    </section>`;
+  };
+  const done = S.meals.filter((m) => m.status === 'done').sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)).slice(0, 12);
+  return `
+  ${simpleHeader('Tápers', 'Lo que hay cocinado y hasta cuándo aguanta')}
+  <main class="view">
+    <button class="btn block primary big" data-act="meal-new">＋ Apuntar comida</button>
+    ${group('nevera')}
+    ${group('congelador')}
+    ${done.length ? `
+    <details class="card tips">
+      <summary>Terminados (${done.length})</summary>
+      <ul class="done-list">${done.map((m) => `<li><span>${m.doneHow === 'tirado' ? '🗑️' : '✅'} ${esc(m.name)}</span><span class="muted">${m.doneAt ? shortDate(m.doneAt) : ''}</span></li>`).join('')}</ul>
+    </details>` : ''}
+    <details class="card tips">
+      <summary>Cuánto aguanta</summary>
+      <ul>${MEAL_TIPS.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+    </details>
+  </main>`;
+}
+
+const addDaysISO = (iso, n) => toISO(addDays(fromISO(iso), n));
+
+function mealForm(m = null, preset = {}) {
+  const isNew = !m;
+  m = m || {
+    id: '', name: preset.name || '', madeOn: todayISO(), place: 'nevera', portions: preset.portions || 4,
+    by: preset.by || S.me, note: preset.note || '',
+  };
+  const useBy = m.useBy || addDaysISO(m.madeOn, MEAL_DAYS[m.place || 'nevera']);
+  const opt = (cur) => ['alfre', 'laura', BOTH].map((p) => `<option value="${p}" ${cur === p ? 'selected' : ''}>${personName(p)}</option>`).join('');
+  sheetActions = [];
+  openSheet(`
+    <h3>${isNew ? '🍱 Apuntar comida' : 'Editar táper'}</h3>
+    <form class="form" data-form="meal" data-id="${esc(m.id)}">
+      <label class="field"><span>¿Qué habéis hecho?</span><input name="name" value="${esc(m.name)}" required placeholder="p. ej. Lentejas con verduras" /></label>
+      <div class="field"><span>¿Dónde está?</span>
+        <div class="seg">
+          <button type="button" class="${(m.place || 'nevera') === 'nevera' ? 'on' : ''}" data-place="nevera">🧊 Nevera</button>
+          <button type="button" class="${m.place === 'congelador' ? 'on' : ''}" data-place="congelador">❄️ Congelador</button>
+        </div>
+        <input type="hidden" name="place" value="${esc(m.place || 'nevera')}" />
+      </div>
+      <div class="form-row">
+        <label class="field grow"><span>Hecho el</span><input type="date" name="madeOn" value="${esc(m.madeOn)}" required /></label>
+        <label class="field grow"><span>Consumir antes del</span><input type="date" name="useBy" value="${esc(useBy)}" required /></label>
+      </div>
+      <p class="hint muted" data-usehint>Orientativo: nevera ${MEAL_DAYS.nevera} días · congelador ~3 meses. Se calcula solo, pero puedes cambiarlo.</p>
+      <div class="form-row">
+        <label class="field grow"><span>Raciones${isNew ? '' : ' que quedan'}</span>
+          <div class="stepper"><button type="button" data-step="-1">−</button><input name="portions" type="number" min="0" max="30" value="${Number(isNew ? m.portions : (m.left ?? m.portions)) || 0}" inputmode="numeric" /><button type="button" data-step="1">+</button></div>
+        </label>
+        <label class="field grow"><span>Lo ha hecho</span><select name="by">${opt(m.by || S.me)}</select></label>
+      </div>
+      <label class="field"><span>Nota</span><input name="note" value="${esc(m.note)}" placeholder="opcional (p. ej. para el finde)" /></label>
+      <div class="actions">
+        <button class="btn block primary" type="submit">Guardar</button>
+        <button class="btn block plain" type="button" data-close>Cancelar</button>
+      </div>
+    </form>`);
+}
+
+// Recalcula "consumir antes" al cambiar fecha o sitio (salvo que se haya tocado a mano).
+function mealFormRecalc(f) {
+  const ub = f.querySelector('[name="useBy"]');
+  if (ub.dataset.touched) return;
+  const place = f.querySelector('[name="place"]').value;
+  const made = f.querySelector('[name="madeOn"]').value || todayISO();
+  ub.value = addDaysISO(made, MEAL_DAYS[place]);
+}
+$sheet.addEventListener('input', (e) => {
+  const f = e.target.closest('form[data-form="meal"]');
+  if (!f) return;
+  if (e.target.name === 'useBy') e.target.dataset.touched = '1';
+  if (e.target.name === 'madeOn') mealFormRecalc(f);
+});
+$sheet.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-place]');
+  if (!b) return;
+  const f = b.closest('form');
+  f.querySelectorAll('[data-place]').forEach((x) => x.classList.toggle('on', x === b));
+  f.querySelector('[name="place"]').value = b.dataset.place;
+  f.querySelector('[name="useBy"]').dataset.touched = '';
+  mealFormRecalc(f);
+});
+$sheet.addEventListener('submit', (e) => {
+  const f = e.target.closest('form[data-form="meal"]');
+  if (!f) return;
+  e.preventDefault();
+  const fd = new FormData(f);
+  const name = String(fd.get('name')).trim();
+  if (!name) return;
+  const id = f.dataset.id || `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const existing = S.meals.find((m) => m.id === id);
+  const portions = Math.max(0, Math.min(30, Number(fd.get('portions')) || 0));
+  const meal = {
+    id, name,
+    place: fd.get('place') || 'nevera',
+    madeOn: fd.get('madeOn') || todayISO(),
+    useBy: fd.get('useBy') || addDaysISO(todayISO(), 3),
+    by: fd.get('by') || S.me,
+    note: String(fd.get('note')).trim(),
+    left: portions,
+    portions: existing ? Math.max(existing.portions || 0, portions) : portions,
+    status: 'active',
+  };
+  if (!existing) meal.createdAt = Date.now();
+  closeSheet();
+  run(store.saveMeal(S.hid, meal), existing ? 'Táper actualizado' : '¡Apuntado! 🍱');
+});
+
+function mealMenu(m) {
+  const st = mealState(m);
+  const acts = [];
+  acts.push({ label: '✅ Nos lo hemos terminado', cls: 'primary', run: () => finishMeal(m, 'comido') });
+  if (m.place === 'congelador') {
+    acts.push({ label: '🧊 Descongelar (pasar a la nevera)', run: () => run(store.saveMeal(S.hid, { id: m.id, place: 'nevera', useBy: addDaysISO(todayISO(), 1), frozenOn: null }), 'A la nevera: consumir en 24 h') });
+  } else {
+    acts.push({ label: '❄️ Pasar al congelador', run: () => run(store.saveMeal(S.hid, { id: m.id, place: 'congelador', useBy: addDaysISO(todayISO(), MEAL_DAYS.congelador), frozenOn: todayISO() }), 'Al congelador ❄️') });
+  }
+  acts.push({ label: 'Editar', run: () => setTimeout(() => mealForm(m), 240) });
+  acts.push({ label: '🗑️ Lo hemos tirado', cls: 'danger-ghost', run: () => finishMeal(m, 'tirado') });
+  actionSheet({
+    title: `🍱 ${esc(m.name)}`,
+    text: `${PLACE[m.place || 'nevera'].icon} ${PLACE[m.place || 'nevera'].name} · hecho el ${esc(niceDate(m.madeOn))} · ${esc(st.label.toLowerCase())}`,
+    actions: acts,
+  });
+}
+function finishMeal(m, how) {
+  run(store.saveMeal(S.hid, { id: m.id, status: 'done', doneHow: how, doneAt: Date.now(), left: 0 }), how === 'tirado' ? 'Tirado 🗑️' : '¡Táper terminado! 🎉');
 }
 
 // Guardado de "Base a cocinar" (con pequeña espera mientras se escribe)
@@ -785,7 +956,7 @@ $sheet.addEventListener('click', (e) => {
   const step = e.target.closest('[data-step]');
   if (step) {
     const inp = step.parentElement.querySelector('input');
-    inp.value = Math.max(0, Math.min(10, (Number(inp.value) || 0) + Number(step.dataset.step)));
+    inp.value = Math.max(Number(inp.min) || 0, Math.min(Number(inp.max) || 10, (Number(inp.value) || 0) + Number(step.dataset.step)));
   }
   const del = e.target.closest('[data-act-sheet="delete-task"]');
   if (del) {
@@ -869,6 +1040,30 @@ $app.addEventListener('click', async (e) => {
     case 'swap-reject': {
       const id = el.dataset.id;
       run(store.rejectSwap(S.hid, ws(), id), 'Le avisamos de que no puedes');
+      break;
+    }
+
+    case 'meal-new':
+      mealForm();
+      break;
+    case 'meal-menu': {
+      const m = S.meals.find((x) => x.id === el.dataset.id);
+      if (m) mealMenu(m);
+      break;
+    }
+    case 'meal-eat': {
+      const m = S.meals.find((x) => x.id === el.dataset.id);
+      if (!m) break;
+      buzz();
+      const left = Math.max(0, Number(m.left ?? m.portions ?? 0) - 1);
+      if (left === 0) finishMeal(m, 'comido');
+      else run(store.saveMeal(S.hid, { id: m.id, left }), `🍽 Quedan ${left} ${left === 1 ? 'ración' : 'raciones'}`);
+      break;
+    }
+    case 'batch-to-taper': {
+      const st = t ? taskState(t) : null;
+      const base = (S.week?.notes?.[el.dataset.id] || '').trim();
+      mealForm(null, { name: base, by: st?.who || S.me, note: t?.note || '' });
       break;
     }
 

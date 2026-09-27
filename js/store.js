@@ -5,6 +5,7 @@
 //   households/{codigo}/weeks/{AAAA-MM-DD}  → { weekStart, completions:{taskId:{by,pts,at,name}}, swaps:{taskId:{from,to,status,offer}},
 //                                              skips:{taskId:{by,reason,at,seen}}, notes:{taskId:texto} }
 //   households/{codigo}/profiles/{persona}  → { photo (dataURL JPEG pequeño), updatedAt }
+//   households/{codigo}/meals/{id}          → tápers: { name, madeOn, place, useBy, portions, left, by, status, … }
 
 const V = '12.19.0';
 const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
@@ -157,5 +158,15 @@ export function watchProfiles(hid, cb, onError) {
 }
 export const setPhoto = (hid, person, photo) =>
   setDoc(doc(db, 'households', hid, 'profiles', person), { photo: photo || deleteField(), updatedAt: Date.now() }, { merge: true });
+
+// Tápers: households/{hid}/meals/{id} → { name, madeOn, place(nevera|congelador), useBy, portions, left, by, note, status(active|done), doneHow, createdAt, doneAt }
+export function watchMeals(hid, cb, onError) {
+  return onSnapshot(collection(db, 'households', hid, 'meals'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), onError);
+}
+export const saveMeal = (hid, meal) => {
+  const { id, ...data } = meal;
+  return setDoc(doc(db, 'households', hid, 'meals', id), data, { merge: true });
+};
+export const deleteMeal = (hid, id) => deleteDoc(doc(db, 'households', hid, 'meals', id));
 
 export const updateHousehold = (hid, data) => setDoc(hRef(hid), data, { merge: true });

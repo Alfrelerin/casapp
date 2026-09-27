@@ -48,6 +48,39 @@ export function shortDate(ms) {
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
+const WEEKDAYS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+export function niceDate(iso) {
+  if (!iso) return '';
+  const d = fromISO(iso);
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+export const todayISO = () => toISO(new Date());
+export const daysFromTo = (aISO, bISO) => Math.round((fromISO(bISO) - fromISO(aISO)) / DAY);
+
+// ---------- Tápers ----------
+// Orientativo: comida cocinada en nevera ~3 días; congelada, mejor antes de ~3 meses.
+export const MEAL_DAYS = { nevera: 3, congelador: 90 };
+export const MEAL_TIPS = [
+  'Orientativo: la comida cocinada aguanta unos 3 días en la nevera y hasta unos 3 meses congelada.',
+  'Enfriad antes de guardar y cerrad bien el táper; mejor raciones pequeñas.',
+  'Descongelad en la nevera (no en la encimera) y consumidlo en 24 h. Lo descongelado no se vuelve a congelar.',
+  'Ante la duda (olor, aspecto raro), mejor no comerlo.',
+];
+export function mealState(meal, today = todayISO()) {
+  const left = daysFromTo(today, meal.useBy);
+  let status = 'ok';
+  if (left < 0) status = 'pasado';
+  else if (left <= 1 && meal.place !== 'congelador') status = 'pronto';
+  else if (left <= 7 && meal.place === 'congelador') status = 'pronto';
+  let label;
+  if (left < 0) label = `Pasado hace ${-left} ${-left === 1 ? 'día' : 'días'}`;
+  else if (left === 0) label = 'Hoy es el último día';
+  else if (left === 1) label = 'Mañana es el último día';
+  else if (left <= 14) label = `Quedan ${left} días`;
+  else label = `Hasta el ${niceDate(meal.useBy)}`;
+  return { left, status, label };
+}
+
 // ---------- Rotación ----------
 export function weekLetter(monday, weekAStart) {
   const diff = weeksBetween(fromISO(weekAStart), monday);

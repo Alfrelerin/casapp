@@ -73,6 +73,8 @@ Está hecha con HTML, CSS y JavaScript, sin nada que compilar. Los datos se guar
 | Editar tareas y puntos | *Ajustes → Tareas y puntos*, o toca una tarea → *Editar tarea*. |
 | Decir que una tarea no hace falta esta semana | Toca la tarea → *No hace falta esta semana* → elige el motivo. Al otro le llega un aviso en *Semana*, con un número rojo en la pestaña. No suma puntos y se puede deshacer. |
 | Poner foto de perfil | *Ajustes → Perfil → Poner foto*. Se recorta cuadrada y se guarda comprimida en Firestore. |
+| Apuntar lo que habéis cocinado | Pestaña *Tápers* → *Apuntar comida*: qué es, si va a la nevera o al congelador, cuándo se hizo y cuántas raciones hay. La fecha límite se calcula sola (nevera 3 días, congelador unos 3 meses) y se puede cambiar. Desde *Cocina* también podéis apuntar el batch con *Apuntar en tápers*. |
+| Comer, congelar o terminar un táper | *Comer 1* resta una ración y, con la última, el táper pasa a terminados. Si tocas el táper puedes pasarlo al congelador, descongelarlo (queda 1 día para comerlo), editarlo o marcarlo como tirado. En la pestaña sale un número rojo si algo caduca hoy o mañana. |
 
 Los **puntos se los lleva quien hace la tarea**. Si alguien te cede una, te llevas sus puntos. Una tarea de "Los dos" suma a los dos.
 
@@ -110,7 +112,7 @@ firestore.rules         Reglas de seguridad para pegar en Firebase
 firebase.json           Solo para pruebas locales con el emulador (opcional)
 ```
 
-Datos en Firestore: `households/{código}` → `tasks/*` (tareas), `weeks/{lunes}` (hechas, intercambios, «no hace falta» y notas de cada semana) y `profiles/{persona}` (fotos).
+Datos en Firestore: `households/{código}` → `tasks/*` (tareas), `weeks/{lunes}` (hechas, intercambios, «no hace falta» y notas de cada semana) `profiles/{persona}` (fotos) y `meals/*` (tápers).
 
 ## Ideas para la versión 2
 

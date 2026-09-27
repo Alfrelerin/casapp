@@ -266,6 +266,31 @@ table.weeks { width: 100%; border-collapse: collapse; font-size: 14px; }
 .fr { font-size: 14px; font-weight: 800; }
 .finde-cell { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border-radius: 16px; padding: 8px; font-size: 14px; font-weight: 800; }
 
+/* Tápers */
+.btn.big { padding: 15px 18px; font-size: 17px; border-radius: 20px; }
+.to-taper { align-self: flex-start; }
+.meal {
+  display: flex; flex-direction: column; gap: 10px; padding: 13px 14px;
+  border-radius: var(--r); background: var(--surface); border: 1.5px solid var(--line);
+  --st: var(--ok);
+}
+.meal-pronto { --st: var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.meal-pasado { --st: var(--danger); background: color-mix(in srgb, var(--danger) 9%, var(--surface)); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.meal-main { display: flex; flex-direction: column; gap: 6px; text-align: left; width: 100%; }
+.meal-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.meal-name { font-size: 17px; font-weight: 900; }
+.meal-pill {
+  flex: none; font-size: 12px; font-weight: 900; padding: 3px 10px; border-radius: 99px;
+  color: var(--st); background: color-mix(in srgb, var(--st) 15%, transparent); white-space: nowrap;
+}
+.meal-meta { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); font-weight: 700; }
+.meal-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.portions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.portions i { width: 12px; height: 12px; border-radius: 50%; background: var(--me); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--me) 55%, #7a4b2a); }
+.portions em { font-style: normal; font-size: 13px; font-weight: 800; color: var(--muted); margin-left: 4px; }
+.done-list { list-style: none; padding: 0 !important; }
+.done-list li { display: flex; justify-content: space-between; gap: 10px; }
+
 /* Ajustes */
 .profiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .profile {
