@@ -325,6 +325,22 @@ function viewSemana() {
   const doneScore = scoreOfWeek(S.week);
   const planned = plannedOfWeek(activeTasks(), L, S.week);
 
+  // Puntos "ocultos": tareas hechas esta semana que ya no se ven (borradas, pausadas o marcadas como "no hace falta").
+  const visible = new Set(sts.filter((s) => !s.skip).map((s) => s.t.id));
+  const hidden = Object.entries(S.week?.completions || {}).filter(([id]) => !visible.has(id));
+  const hiddenBlock = hidden.length ? `
+    <section class="group">
+      <h2>🧾 Puntos de tareas que ya no están<span class="count">${hidden.length}</span></h2>
+      <div class="cards">${hidden.map(([id, c]) => `
+        <div class="task own-${esc(c.by)}">
+          ${avatar(c.by, 'sm')}
+          <div class="task-body"><span class="task-title">${esc(c.name || taskById(id)?.name || id)}</span>
+            <span class="task-meta" style="padding-left:0"><b>+${pts(c.pts)}</b><i class="dot">·</i><span>${taskById(id) ? (taskById(id).active === false ? 'tarea pausada' : 'marcada como «no hace falta»') : 'tarea borrada'}</span></span></div>
+          <button class="btn small ghost" data-act="pts-remove" data-ws="${esc(ws())}" data-id="${esc(id)}">Quitar</button>
+        </div>`).join('')}
+      </div>
+    </section>` : '';
+
   const requests = notices().map(({ kind, id, s }) => {
     const t = taskById(id), off = s.offer && taskById(s.offer);
     if (!t) return '';
@@ -369,6 +385,7 @@ function viewSemana() {
     ${section(`${PERSON_EMOJI[me]} Tus tareas`, sts.filter((s) => s.who === me))}
     ${section(`${PERSON_EMOJI.both} Los dos`, sts.filter((s) => s.who === BOTH))}
     ${section(`${PERSON_EMOJI[them]} Tareas de ${esc(personName(them))}`, sts.filter((s) => s.who === them), 'theirs')}
+    ${hiddenBlock}
     ${!sts.length ? '<p class="empty">No hay tareas. Añádelas en Ajustes.</p>' : ''}
     <details class="card tips">
       <summary>Cómo funciona</summary>
@@ -418,7 +435,7 @@ function viewBalance() {
   }).join('');
 
   const hist = allCompletions(S.recentWeeks).slice(0, 20).map((c) => `
-    <li>${avatar(c.by, 'sm')}<span class="h-name">${esc(c.name || taskById(c.taskId)?.name || c.taskId)}</span><span class="h-pts">+${c.pts}</span><span class="h-date">${c.at ? shortDate(c.at) : ''}</span></li>`).join('');
+    <li><button class="hist-row" data-act="hist-menu" data-ws="${esc(c.weekStart)}" data-id="${esc(c.taskId)}">${avatar(c.by, 'sm')}<span class="h-name">${esc(c.name || taskById(c.taskId)?.name || c.taskId)}</span><span class="h-pts">+${c.pts}</span><span class="h-date">${c.at ? shortDate(c.at) : ''}</span></button></li>`).join('');
 
   const seg = (id, txt) => `<button class="${S.period === id ? 'on' : ''}" data-act="period" data-p="${id}">${txt}</button>`;
 
@@ -441,7 +458,7 @@ function viewBalance() {
     </section>
     <section class="group">
       <h2>Historial</h2>
-      ${hist ? `<ul class="card hist">${hist}</ul>` : '<p class="empty">Todavía no hay nada marcado.</p>'}
+      ${hist ? `<ul class="card hist">${hist}</ul><p class="hint muted">Toca una línea para quitar esos puntos si se marcó por error.</p>` : '<p class="empty">Todavía no hay nada marcado.</p>'}
     </section>
   </main>`;
 }
@@ -1043,6 +1060,20 @@ $app.addEventListener('click', async (e) => {
       break;
     }
 
+    case 'pts-remove':
+      run(store.unmarkDone(S.hid, el.dataset.ws, el.dataset.id), 'Puntos quitados');
+      break;
+    case 'hist-menu': {
+      const wk = S.recentWeeks.find((w) => w.weekStart === el.dataset.ws);
+      const c = wk?.completions?.[el.dataset.id];
+      if (!c) break;
+      actionSheet({
+        title: `${esc(c.name || el.dataset.id)} · +${pts(c.pts)}`,
+        text: `Hecha por ${esc(personName(c.by))}${c.at ? ` el ${esc(shortDate(c.at))}` : ''} · semana del ${esc(weekLabel(fromISO(el.dataset.ws)))}.`,
+        actions: [{ label: 'Quitar estos puntos', cls: 'danger-ghost', run: () => run(store.unmarkDone(S.hid, el.dataset.ws, el.dataset.id), 'Puntos quitados') }],
+      });
+      break;
+    }
     case 'meal-new':
       mealForm();
       break;

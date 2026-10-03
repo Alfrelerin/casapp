@@ -134,8 +134,12 @@ export const cancelSwap = (hid, ws, taskId, swap) => {
 };
 
 // "No hace falta esta semana": quién lo decidió, por qué y quién lo ha visto.
+// Al marcarla como "no hace falta" se quita también si estaba hecha (para que no cuente puntos ocultos).
 export const skipTask = (hid, ws, taskId, by, reason = '') =>
-  mergeWeek(hid, ws, { skips: { [taskId]: { by, reason, at: Date.now(), seen: { [by]: true } } } });
+  mergeWeek(hid, ws, {
+    skips: { [taskId]: { by, reason, at: Date.now(), seen: { [by]: true } } },
+    completions: { [taskId]: deleteField() },
+  });
 export const unskipTask = (hid, ws, taskId) => mergeWeek(hid, ws, { skips: { [taskId]: deleteField() } });
 export const ackSkip = (hid, ws, taskId, person) =>
   mergeWeek(hid, ws, { skips: { [taskId]: { seen: { [person]: true } } } });

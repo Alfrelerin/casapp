@@ -1,6 +1,6 @@
 // Service worker: permite instalar la app y abrirla sin conexión.
 // Si cambias archivos y no ves los cambios, sube el número de versión.
-const CACHE = 'reparto-v4';
+const CACHE = 'reparto-v5';
 const SHELL = [
   './', './index.html', './css/styles.css', './js/app.js', './js/logic.js', './js/store.js',
   './js/firebase-config.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png',
