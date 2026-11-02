@@ -139,6 +139,14 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 8px; font-
 .prog-top span { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 700; }
 .bar { height: 12px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
 .bar i { display: block; height: 100%; border-radius: 99px; transition: width 0.5s cubic-bezier(.3,1.4,.5,1); }
+.bar.over i { background-image: repeating-linear-gradient(-45deg, rgba(255,255,255,.45) 0 6px, transparent 6px 12px); }
+.extra { font-style: normal; font-weight: 900; font-size: 12px; color: var(--ok); margin-right: 6px; }
+.overall {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; width: 100%;
+  margin-top: 2px; padding-top: 12px; border-top: 1.5px dashed var(--line); font-size: 14px; font-weight: 700; text-align: left;
+}
+.overall .dot { font-style: normal; opacity: .5; }
+.overall-msg { width: 100%; color: var(--muted); font-size: 13px; }
 .fill-alfre { background: var(--alfre); }
 .fill-laura { background: var(--laura); }
 

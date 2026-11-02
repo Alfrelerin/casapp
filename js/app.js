@@ -2,7 +2,7 @@ import {
   PEOPLE, BOTH, other, personName, mondayOf, toISO, fromISO, addDays, weekLabel, shortDate,
   weekLetter, assigneeFor, scoreOfWeek, plannedOfWeek, allCompletions, addCompletion, emptyScore,
   balanceMessage, DEFAULT_TASKS, DEFAULT_FINDE, TIPS, BATCH_TIPS, newHouseholdCode, PERSON_EMOJI, SKIP_REASONS,
-  niceDate, todayISO, MEAL_DAYS, MEAL_TIPS, mealState,
+  niceDate, todayISO, MEAL_DAYS, MEAL_TIPS, mealState, scoreOfAll,
 } from './logic.js';
 
 // ---------------------------------------------------------------------------
@@ -152,8 +152,8 @@ function startApp() {
   S.unsubs.push(store.watchProfiles(S.hid, (p) => { S.profiles = p; render(); }, onErr));
   S.unsubs.push(store.watchMeals(S.hid, (m) => { S.meals = m; render(); }, onErr));
   setMeClass();
-  const since = toISO(addDays(mondayOf(), -7 * 9));
-  S.unsubs.push(store.watchWeeksSince(S.hid, since, (w) => { S.recentWeeks = w; render(); }, onErr));
+  // Todas las semanas (para el marcador general); son pocos documentos (~52 al año).
+  S.unsubs.push(store.watchWeeksSince(S.hid, '2000-01-01', (w) => { S.recentWeeks = w; render(); }, onErr));
   watchViewedWeek();
   renderTabs();
   $tabs.hidden = false;
@@ -307,15 +307,28 @@ function section(title, list, extraCls = '') {
 }
 
 function progressRow(p, done, planned) {
-  const pct = planned ? Math.min(100, Math.round((done / planned) * 100)) : 0;
+  const pct = planned ? Math.min(100, Math.round((done / planned) * 100)) : (done ? 100 : 0);
+  const extra = Math.max(0, done - planned);
   return `
   <div class="prog">
     ${avatar(p)}
     <div class="prog-main">
-      <div class="prog-top"><b>${p === S.me ? 'Tú' : esc(personName(p))}</b><span>${done} / ${planned} pts</span></div>
-      <div class="bar"><i class="fill-${p}" style="width:${pct}%"></i></div>
+      <div class="prog-top"><b>${p === S.me ? 'Tú' : esc(personName(p))}</b><span>${extra ? `<em class="extra">+${extra} extra ⭐</em>` : ''}${done} / ${planned} pts</span></div>
+      <div class="bar ${extra ? 'over' : ''}"><i class="fill-${p}" style="width:${pct}%"></i></div>
     </div>
   </div>`;
+}
+
+function overallLine() {
+  const me = S.me, them = other(me);
+  const all = scoreOfAll(S.recentWeeks);
+  if (!all[me] && !all[them]) return '';
+  return `
+    <button class="overall" data-act="go-total">
+      <span>🏆 En total</span>
+      <b class="c-${me}">Tú ${all[me]}</b><i class="dot">·</i><b class="c-${them}">${esc(personName(them))} ${all[them]}</b>
+      <span class="overall-msg">${esc(balanceMessage(all, me))}</span>
+    </button>`;
 }
 
 function viewSemana() {
@@ -323,7 +336,7 @@ function viewSemana() {
   const sts = activeTasks().map(taskState);
   const L = letter();
   const doneScore = scoreOfWeek(S.week);
-  const planned = plannedOfWeek(activeTasks(), L, S.week);
+  const planned = plannedOfWeek(activeTasks(), L);
 
   // Puntos "ocultos": tareas hechas esta semana que ya no se ven (borradas, pausadas o marcadas como "no hace falta").
   const visible = new Set(sts.filter((s) => !s.skip).map((s) => s.t.id));
@@ -381,6 +394,7 @@ function viewSemana() {
     <div class="card summary">
       ${progressRow(me, doneScore[me], planned[me])}
       ${progressRow(them, doneScore[them], planned[them])}
+      ${overallLine()}
     </div>
     ${section(`${PERSON_EMOJI[me]} Tus tareas`, sts.filter((s) => s.who === me))}
     ${section(`${PERSON_EMOJI.both} Los dos`, sts.filter((s) => s.who === BOTH))}
@@ -416,6 +430,10 @@ function viewBalance() {
       score.alfre += s.alfre; score.laura += s.laura;
     });
     label = `Quincena A+B · ${weekLabel(aMon).split('–')[0]}–${weekLabel(bMon).split('–')[1]}`;
+  } else if (S.period === 'total') {
+    score = scoreOfAll(S.recentWeeks);
+    const first = S.recentWeeks.map((w) => w.weekStart).filter(Boolean).sort()[0];
+    label = first ? `Marcador general · desde el ${niceDate(first)}` : 'Marcador general';
   } else {
     const now = new Date();
     score = emptyScore();
@@ -442,7 +460,7 @@ function viewBalance() {
   return `
   ${simpleHeader('Balance', 'Puntos de lo que cada uno ha hecho')}
   <main class="view">
-    <div class="seg">${seg('semana', 'Semana')}${seg('quincena', 'Quincena')}${seg('mes', 'Mes')}</div>
+    <div class="seg">${seg('semana', 'Semana')}${seg('quincena', 'Quincena')}${seg('mes', 'Mes')}${seg('total', '🏆 Total')}</div>
     <div class="card scoreboard">
       <p class="muted cap">${esc(label)}</p>
       <div class="score-row">
@@ -1060,6 +1078,13 @@ $app.addEventListener('click', async (e) => {
       break;
     }
 
+    case 'go-total':
+      S.period = 'total';
+      S.tab = 'balance';
+      ls.set('tab', S.tab);
+      render();
+      window.scrollTo({ top: 0 });
+      break;
     case 'pts-remove':
       run(store.unmarkDone(S.hid, el.dataset.ws, el.dataset.id), 'Puntos quitados');
       break;

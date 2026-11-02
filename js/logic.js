@@ -115,11 +115,25 @@ export function scoreOfWeek(week) {
   return s;
 }
 // Puntos previstos para la semana (lo asignado a cada uno, hecho o no).
-export function plannedOfWeek(tasks, letter, week) {
+// Máximo FIJO de la semana: lo que toca a cada uno según la rotación A/B.
+// No cambia con intercambios, con tareas hechas por el otro ni con "no hace falta";
+// los puntos conseguidos sí pueden pasar de este máximo (puntos extra).
+export function plannedOfWeek(tasks, letter) {
   const s = emptyScore();
   tasks.forEach((t) => {
-    if (t.active === false || week?.skips?.[t.id]) return;
-    addCompletion(s, { by: assigneeFor(t, letter, week), pts: t.points });
+    if (t.active === false) return;
+    addCompletion(s, { by: letter === 'A' ? t.a : t.b, pts: t.points });
+  });
+  return s;
+}
+
+// Marcador general: todos los puntos desde el principio.
+export function scoreOfAll(weeks) {
+  const s = emptyScore();
+  weeks.forEach((w) => {
+    const ws = scoreOfWeek(w);
+    s.alfre += ws.alfre;
+    s.laura += ws.laura;
   });
   return s;
 }
